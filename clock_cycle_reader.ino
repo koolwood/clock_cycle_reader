@@ -187,7 +187,7 @@ void sprocess_input() {
      else if (rxdata == 'c'){read_cycle--;if(read_cycle<0)read_cycle=0; mess = String("decreased read_cycle to ") + String(read_cycle) +String("\r\n");}
     // else if (rxdata == 'L'){light_time++;if(light_time>10)light_time=10; mess = String("increased light_time to ") + String(light_time) +String("\r\n");}
      else if (rxdata == 'L'){print_cycles();}
-     else if (rxdata == 't'){swings*=2;if(swings>1200)swings=10; mess = String(" swings set to ") + String(swings) +String("\r\n");store_swings(swings);}
+     else if (rxdata == 't'){swings*=2;if(swings>1400)swings=10; mess = String(" swings set to ") + String(swings) +String("\r\n");store_swings(swings);}
     // else if (rxdata == 'p'){photo-=100;if(photo<100)photo=100; mess = String("decreased photo to ") + String(photo) +String("\r\n");}
     // else if (rxdata == 'M'){motion_delta+=100;if(motion_delta>2000)motion_delta=2000; mess = String("increased motion_delta to ") + String(motion_delta) +String("\r\n");}
     // else if (rxdata == 'm'){motion_delta-=100;if(motion_delta<100)motion_delta=100; mess = String("decreased motion_delta to ") + String(motion_delta) +String("\r\n");}
@@ -254,16 +254,21 @@ int get_cnt(int cycle){
 
 void print_cycles(){
   int lcycle,cnt;
-  float pk;
+  float pk,pk_avg = 0;
   EEPROM.get(0,lcycle);
-  for(int k =0;k < lcycle;k++){
+  for(int k =0;k < lcycle + 1;k++){
     EEPROM.get(16 + k * 4,cnt);
     EEPROM.get(16 + 500 * 4 + k * 4,pk);
     Serial.printf("cycle = %d, on_cnt = %d\n\r",k,cnt);
-    String mess = String("cycle=") + String(k) +  String(", cnt=") + String(cnt) +  String(", peek=") + String(pk) + String("\r\n");
+    String mess = String("cycle=") + String(k) +  String(", single cnt=") + String(cnt) +  String(", avg cnt=") + String(pk) + String("\r\n");
     blloop(mess);
     if(telnetrx)telnet.println(mess);
+    pk_avg += pk;
   }
+  pk_avg /= (lcycle + 1);
+  String mess = String("avg of all cycles =") + String(pk_avg) + String("\r\n");
+  blloop(mess);
+  if(telnetrx)telnet.println(mess);
 }
 
 float get_last_avg(){
