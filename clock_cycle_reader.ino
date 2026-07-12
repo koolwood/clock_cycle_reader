@@ -80,6 +80,33 @@ void setup() {
     pinMode(irsensor,INPUT_PULLUP);
 
 }
+ 
+int debounce(int rawSignal, int requiredStableCount)
+{
+    static int stableState = 0;      // debounced output
+    static int lastRawState = 0;     // previous raw sample
+    static int counter = 0;               // counts consecutive stable samples
+
+    // If raw signal changed, reset counter
+    if (rawSignal != lastRawState)
+    {
+        lastRawState = rawSignal;
+        counter = 0;
+    }
+    else
+    {
+        // Raw signal is same as last sample → increment stability counter
+        if (counter < requiredStableCount)
+            counter++;
+    }
+
+    // If stable long enough, accept new state
+    if (counter >= requiredStableCount)
+        stableState = rawSignal;
+
+    return stableState;
+}
+
 
 void loop() {
   //  static bool lights_off = false;
@@ -94,17 +121,20 @@ void loop() {
     if(nowTime > startTime + 100 ){
       startTime = micros();
       ir_sensor_state = digitalRead(irsensor);
+      digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
       ncnt++;
+      ir_sensor_state = debounce(ir_sensor_state,25);
       if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
-        if(ncnt > 8000 && ncnt < 8800){
+        if(debug > 1){
+          String mess =  String("cnt =") + String(ncnt) + String("\r\n");
+          blloop(mess);
+          if(tdebug)telnet.print(mess);
+        }
+        if(ncnt > 8000){
           new_cnt = ncnt;
           ncnt_sum += ncnt;
           loops++;
-      //    history[loops++] = ncnt;
-          if(loops == swings){
-            // avg_cnt = 0;
-            // for(int i = 0;i < CLOCK_SWINGS;i++)avg_cnt += history[i];
-            // avg_cnt /= CLOCK_SWINGS;
+          if(loops >= swings){
             ncnt_result = ncnt_sum / swings;
             store_avg(cycle++,new_cnt,ncnt_result);
 
@@ -200,7 +230,7 @@ void sprocess_input() {
     // else if (rxdata == 'w'){mess = "update eeprom\r\n";load_up_eeprom(false,true);}
      else if (rxdata == 's') {mess =  String("single cnt =") + String(new_cnt) +  String(",swings =") + String(swings) + String(",ncnt_result =") + String(ncnt_result) +  String("\r\n");}
      else if (rxdata == 'R'){cycle = 0;store_avg(cycle,1,2);} //send setup
-     else if (rxdata == '1'){debug++;if(debug > 1)debug = 0; if(debug)mess = String("debug on\r\n");else  mess = String("debug off\r\n");}
+     else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n");}
     // else if (rxdata == '2'){test_radar = !test_radar;if(test_radar) mess = String("test_radar on\r\n");else  mess = String("test_radar off\r\n");}
      else mess = "invalid data send 'h' for help\n";
     // setup_ld016();
@@ -236,7 +266,7 @@ int get_last_cycle(){
 int get_swings_level(){
   int lcycle;
   EEPROM.get(4,lcycle);
-  if(lcycle < 100 || lcycle >= 2000)lcycle = 100;
+  if(lcycle < 10 || lcycle >= 2000)lcycle = 10;
   return lcycle;
 }
 
@@ -288,8 +318,8 @@ void store_avg(int cycle,int cnt,float peak){
 }
 
 void store_swings(int cycle){
-  if(cycle >= 1200)cycle = 1200;
-  if(cycle <= 60)cycle = 60;
+  if(cycle >= 2000)cycle = 2000;
+  if(cycle <= 10)cycle = 10;
   EEPROM.put(4,cycle);
   EEPROM.commit();
 }
