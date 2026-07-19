@@ -1,9 +1,12 @@
 #define USE_OTA
 #define USE_TELNET
 #define USE_BLE
+#define USE_WIFI
 
 #include <Arduino.h>
+#ifdef USE_WIFI
 #include <WiFi.h>
+#endif
 #include <EEPROM.h>
 #include <time.h>
 
@@ -63,12 +66,16 @@ void setup() {
     otasetup();
 #endif
     connected = 1;
+#ifdef USE_TELNET
     setupTelnet();
+#endif
   }
   EEPROM.begin(4096);
 
-
+#ifdef USE_BLE
   blsetup();
+#endif
+//  blsetup();
 
   //set the resolution to 12 bits (0-4095)
   analogReadResolution(12);
@@ -111,73 +118,70 @@ int debounce_signal(int rawSignal, int requiredStableCount)
 
 
 void loop() {
-  //  static bool lights_off = false;
   unsigned long nowTime = micros();
-  static bool first_loop = true,reset_now = false;
-  static int loopcnt = 0;
-  static int on_cnt = 0,last_t_peak,start_cycle = 0,cnt = 0;
+  static bool first_loop = true;
   static int ir_sensor_state = 0,last_ir_sensor_state = 0,ncnt = 0,loops = 0;
-  //static int history[CLOCK_SWINGS];
   static float ncnt_sum = 0;
   if(first_loop){
     first_loop = false;
     startTime = micros();
   }
-  if(reset_now){
-    reset_now = false;
-    startTime = nowTime = micros();
-  }
-    if(nowTime > startTime + 100 ){
-      startTime = micros();
-      ir_sensor_state = digitalRead(irsensor);
-      digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
-      ncnt++;
-      ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
-      if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
-        if(debug > 1 ){
-          String mess =  String("cnt =") + String((float)ncnt/10000,3) + String(" sec\r\n");
-          blloop(mess);
-          if(tdebug)telnet.print(mess);
+  if(nowTime > startTime + 100 ){
+    startTime = micros();
+    ir_sensor_state = digitalRead(irsensor);
+    digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
+    ncnt++;
+    ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
+    if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
+      if(debug > 1 ){
+        String mess =  String("cnt =") + String((float)ncnt/10000,4) + String(" sec\r\n");
+#ifdef USE_BLE
+       blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+        if(telnetrx)telnet.print(mess);
+#endif
+//        blloop(mess);
+//        if(tdebug)telnet.print(mess);
+      }
+      if(ncnt > 8000){
+        if(loops){//don't use first loop
+          new_cnt = ncnt;
+          ncnt_sum += ncnt;
         }
-        if(ncnt > 8000){
-          if(loops){//don't use first loop
-            new_cnt = ncnt;
-            ncnt_sum += ncnt;
-          }
-          loops++;
-          if(loops >= swings + 1){
-            ncnt_result = ncnt_sum / (float)swings;
-            store_avg(cycle++,new_cnt,ncnt_result);
+        loops++;
+        if(loops >= swings + 1){
+          ncnt_result = ncnt_sum / (float)swings;
+          store_avg(cycle++,new_cnt,ncnt_result);
 
-            if(debug){
-              String mess =  String("avg=") + String((float)ncnt_result/(10000),3) +  String(" sec\r\n");
-              blloop(mess);
-              if(tdebug)telnet.print(mess);
-            }
-            loops = ncnt_sum = 0;
-            reset_now = true;
-//            startTime = micros();//reset loop time
+          if(debug){
+            String mess =  String("avg=") + String((float)ncnt_result/(10000),4) +  String(" sec\r\n");
+#ifdef USE_BLE
+            blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+            if(telnetrx)telnet.print(mess);
+#endif
+//            blloop(mess);
+//            if(tdebug)telnet.print(mess);
           }
+          loops = ncnt_sum = 0;
         }
-        ncnt = 0;
-        sprocess_input();
+      }
+      ncnt = 0;
+      sprocess_input();
 #ifdef USE_OTA
-        if(connected)otaloop();
+      if(connected)otaloop();
 #endif 
-        // if(loops == 0){
-        //   nowTime = startTime = micros();//reset loop time
-        // }
-     }
-      last_ir_sensor_state = ir_sensor_state;
     }
-//   sprocess_input();
-//   if(connected)otaloop();
+    last_ir_sensor_state = ir_sensor_state;
+  }
  }
-
 
 bool connect_to_wifi(){
   int login_cnt = 0,wifi_status;
   bool not_connected = true;
+#ifdef USE_WIFI
 
   if(WiFi.isConnected()){
     WiFi.disconnect();
@@ -216,8 +220,10 @@ bool connect_to_wifi(){
        Serial.println("wifi failed");
     }
   }
+#endif
   return not_connected;
 }
+
 void sprocess_input() {
   String mess;
   int reboot = 0;
@@ -225,12 +231,12 @@ void sprocess_input() {
   if (rxdata != 0) {
     if (rxdata == 'h'){
       if(telnetrx == 0)mess = "1 = debug,R=reset cycle,t=adjust swings\r\nc or C=read+,c=read-,e=read cycle,L=print all cycles,y=debounce,x=reboot,s=setup\r\n";
-      else mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust treg,6=reset cycle,7=help\n\r8=print all cycles,9=debounce\n\rbye=quit,reboot=reboot,0=setup";
+      else mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust swings,6=reset cycle,7=help\n\r8=print all cycles,9=debounce\n\rbye=quit,reboot=reboot,0=setup";
     }
     //  else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
     // else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
      else if (rxdata == 'C'){read_cycle++;if(read_cycle>=500)read_cycle=499; mess = String("increased read_cycle to ") + String(read_cycle) +String("\r\n");}
-     else if (rxdata == 'e'){mess =  String("cycle = ") + String(read_cycle) + String(",single cnt =") + String(get_cnt(read_cycle))+ String(",avg =") + String(get_avg(read_cycle)/10000,3) + String("\r\n");}
+     else if (rxdata == 'e'){mess =  String("cycle = ") + String(read_cycle) + String(",single cnt =") + String(get_cnt(read_cycle))+ String(",avg =") + String(get_avg(read_cycle)/10000,4) + String("\r\n");}
      else if (rxdata == 'c'){read_cycle--;if(read_cycle<0)read_cycle=0; mess = String("decreased read_cycle to ") + String(read_cycle) +String("\r\n");}
      else if (rxdata == 'x'){reboot = 1;String("rebooting in 2 seconds ") + String("\r\n");}
      else if (rxdata == 'L'){print_cycles();}
@@ -246,32 +252,55 @@ void sprocess_input() {
     // else if (rxdata == 'T'){motion_time_limit+=2;if(motion_time_limit>60)motion_time_limit=60; mess = String("increased motion_time_limit to ") + String(motion_time_limit) +String("\r\n");}
     // else if (rxdata == 't'){motion_time_limit-=2;if(motion_time_limit<4)motion_time_limit=4; mess = String("decreased motion_time_limit to ") + String(motion_time_limit) +String("\r\n");}
     // else if (rxdata == 'w'){mess = "update eeprom\r\n";load_up_eeprom(false,true);}
-     else if (rxdata == 's') {mess =  String("single =") + String((float)new_cnt/10000,3) +  String( " sec,swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",result =") + String((float)ncnt_result/10000,3) +  String(" sec\r\n");}
+     else if (rxdata == 's') {mess =  String("single =") + String((float)new_cnt/10000,4) +  String( " sec,swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",result =") + String((float)ncnt_result/10000,4) +  String(" sec\r\n");}
      else if (rxdata == 'R'){cycle = 0;store_avg(cycle,1,2);} //send setup
      else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n");}
     // else if (rxdata == '2'){test_radar = !test_radar;if(test_radar) mess = String("test_radar on\r\n");else  mess = String("test_radar off\r\n");}
      else mess = "invalid data send 'h' for help\n";
     // setup_ld016();
+#ifdef USE_BLE
     if(telnetrx == 0)blloop(mess);
-    else{
-      telnet.println(mess);
-      tdebug = debug;
-    }
+    //blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+    if(telnetrx)telnet.print(mess);
+#endif
+    if(telnetrx)tdebug = debug;
+    // if(telnetrx == 0)blloop(mess);
+    // else{
+    //   telnet.print(mess);
+    //   tdebug = debug;
+    // }
     if(rxdata == 'c' || rxdata == 'C'){
-      mess =  String("cycle = ") + String(read_cycle) + String(",cnt =") + String(get_cnt(read_cycle))+String(",swings =") + String(swings)+ String(",avg =") + String(get_avg(read_cycle)/10000,3) + String("\r\n");
-       if(telnetrx == 0)blloop(mess);
-       else telnet.println(mess);
+      mess =  String("cycle = ") + String(read_cycle) + String(",cnt =") + String(get_cnt(read_cycle))+String(",swings =") + String(swings)+ String(",avg =") + String(get_avg(read_cycle)/10000,4) + String("\r\n");
+#ifdef USE_BLE
+    if(telnetrx == 0)blloop(mess);
+    //blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+    if(telnetrx)telnet.print(mess);
+#endif
+      //  if(telnetrx == 0)blloop(mess);
+      //  else telnet.print(mess);
     }
     rxdata = 0;
-    mess = String("last cycle =") + String(get_last_cycle()) + String(",single cnt =") + String((float)new_cnt/10000,3)+String(",swings =") + String(swings)+  String(",avg =") + String(get_last_avg()/10000,3) + String("\r\n");
-    if(telnetrx == 0)blloop(mess);
-    else telnet.println(mess);
+    mess = String("last cycle =") + String(get_last_cycle()) + String(",single cnt =") + String((float)new_cnt/10000,4)+String(",swings =") + String(swings)+  String(",avg =") + String(get_last_avg()/10000,4) + String("\r\n");
+#ifdef USE_BLE
+    if(telnetrx == 0)blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+    if(telnetrx) telnet.print(mess);
+#endif
     telnetrx = 0;
   }else{
     mess =  String("");
-     if(telnetrx == 0)blloop(mess);//update BLE
+#ifdef USE_BLE
+    if(telnetrx == 0)blloop(mess);//update BLE
+#endif
   }
+#ifdef USE_TELNET
   if(connected)teloop();
+#endif
   if(reboot == 1){delay(2000);ESP.restart();delay(2000);}
 }
 
@@ -312,19 +341,34 @@ void print_cycles(){
   int lcycle,cnt;
   float pk,pk_avg = 0;
   EEPROM.get(0,lcycle);
+   String mess1;
   for(int k =0;k < lcycle + 1;k++){
     EEPROM.get(16 + k * 4,cnt);
     EEPROM.get(16 + 500 * 4 + k * 4,pk);
-    Serial.printf("cycle = %d, on_cnt = %d\n\r",k,cnt);
-    String mess = String("cycle=") + String(k) +  String(", single cnt=") + String((float)cnt/10000,3) +  String(" sec, avg cnt=") + String(pk/10000,3) + String(" sec \r\n");
-    blloop(mess);
-    if(telnetrx)telnet.println(mess);
+    Serial.printf("cycle = %d, single swing = %d\n\r",k,cnt);
+    if(k == 0)mess1 = String("cycle, single sec, avg sec \r\n");
+    else mess1 = "";
+    String mess =  mess1 + String(k) +  String("  ,") + String((float)cnt/10000,4) +  String("  ,") + String(pk/10000,4) + String(" \r\n");
+#ifdef USE_BLE
+    blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+    if(telnetrx)telnet.print(mess);
+#endif
+//    blloop(mess);
+//    if(telnetrx)telnet.print(mess);
     pk_avg += pk;
   }
   pk_avg /= (lcycle + 1);
-  String mess = String("avg of all cycles =") + String(pk_avg/10000,3) + String(" sec\r\n");
-  blloop(mess);
-  if(telnetrx)telnet.println(mess);
+  String mess = String("avg of all cycles =") + String(pk_avg/10000,5) + String(" sec\r\n");
+#ifdef USE_BLE
+    blloop(mess);//update BLE
+#endif
+#ifdef USE_TELNET
+    if(telnetrx)telnet.print(mess);
+#endif
+//  blloop(mess);
+//  if(telnetrx)telnet.print(mess);
 }
 
 float get_last_avg(){
