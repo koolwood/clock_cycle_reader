@@ -1,6 +1,6 @@
 #define USE_OTA
 #define USE_TELNET
-#define USE_BLE
+//#define USE_BLE
 #define USE_WIFI
 
 #include <Arduino.h>
@@ -28,6 +28,10 @@ unsigned char rxdata = 0,telnetrx = 0;
 /*Put your SSID & Pass =word*/
 char ssid[32] = "starwars24";  // Enter SSID here
 char password[32] = "0609606096";  //Enter Password here
+const char* ntpServer = "pool.ntp.org";
+
+struct timespec end_time;
+struct timespec start_time;
 
 // Set your Static IP address
 IPAddress local_IP(192, 168, 1, 29);
@@ -116,7 +120,6 @@ int debounce_signal(int rawSignal, int requiredStableCount)
     return stableState;
 }
 
-
 void loop() {
   unsigned long nowTime = micros();
   static bool first_loop = true;
@@ -130,16 +133,20 @@ void loop() {
     startTime = micros();
     ir_sensor_state = digitalRead(irsensor);
     digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
+    if(ncnt == 0)clock_gettime(CLOCK_REALTIME, &start_time) ;//gettimeofday(&start_time, NULL);
     ncnt++;
     ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
     if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
       if(debug > 1 ){
-        String mess =  String("cnt =") + String((float)ncnt/10000,4) + String(" sec\r\n");
+        clock_gettime(CLOCK_REALTIME, &end_time) ;//       gettimeofday(&end_time, NULL);
+        float result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
+        String mess =  String("cnt =") + String((float)ncnt/10000,4);
+        mess += String(" sec,  ") + String(result) + String("sec \r\n");
 #ifdef USE_BLE
        blloop(mess);//update BLE
 #endif
 #ifdef USE_TELNET
-        if(telnetrx)telnet.print(mess);
+        telnet.print(mess);
 #endif
 //        blloop(mess);
 //        if(tdebug)telnet.print(mess);
@@ -160,7 +167,7 @@ void loop() {
             blloop(mess);//update BLE
 #endif
 #ifdef USE_TELNET
-            if(telnetrx)telnet.print(mess);
+           telnet.print(mess);
 #endif
 //            blloop(mess);
 //            if(tdebug)telnet.print(mess);
@@ -169,13 +176,13 @@ void loop() {
         }
       }
       ncnt = 0;
-      sprocess_input();
+    }//end of trigger processing
+    sprocess_input();
 #ifdef USE_OTA
-      if(connected)otaloop();
+    if(connected)otaloop();
 #endif 
-    }
     last_ir_sensor_state = ir_sensor_state;
-  }
+  }//end of 100 usec loop
  }
 
 bool connect_to_wifi(){
@@ -216,6 +223,15 @@ bool connect_to_wifi(){
 //      times[9] = WiFi.RSSI();
       delay(3000);
       not_connected = false;
+//      configTime(-60 * 60 * 5, 0, ntpServer);
+      configTime(0, 0, ntpServer);
+      int maxRetries = 20,retryCounter = 0;
+      struct tm timeinfo1;
+      while (!getLocalTime(&timeinfo1) && retryCounter < maxRetries) {
+          delay(500);
+          Serial.print(".");
+          retryCounter++;
+      }
     }else{
        Serial.println("wifi failed");
     }
@@ -231,7 +247,7 @@ void sprocess_input() {
   if (rxdata != 0) {
     if (rxdata == 'h'){
       if(telnetrx == 0)mess = "1 = debug,R=reset cycle,t=adjust swings\r\nc or C=read+,c=read-,e=read cycle,L=print all cycles,y=debounce,x=reboot,s=setup\r\n";
-      else mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust swings,6=reset cycle,7=help\n\r8=print all cycles,9=debounce\n\rbye=quit,reboot=reboot,0=setup";
+      else mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust swings,6=reset cycle,7=help\n\r8=print all cycles,9=debounce\n\rbye=quit,reboot=reboot,0=setup\r\n";
     }
     //  else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
     // else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
@@ -254,10 +270,11 @@ void sprocess_input() {
     // else if (rxdata == 'w'){mess = "update eeprom\r\n";load_up_eeprom(false,true);}
      else if (rxdata == 's') {mess =  String("single =") + String((float)new_cnt/10000,4) +  String( " sec,swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",result =") + String((float)ncnt_result/10000,4) +  String(" sec\r\n");}
      else if (rxdata == 'R'){cycle = 0;store_avg(cycle,1,2);} //send setup
-     else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n");}
+     else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
+                            mess += String(printInternetTime()) + String("\r\n");}
     // else if (rxdata == '2'){test_radar = !test_radar;if(test_radar) mess = String("test_radar on\r\n");else  mess = String("test_radar off\r\n");}
      else mess = "invalid data send 'h' for help\n";
-    // setup_ld016();
+    // setup_ld016();  printInternetTime()
 #ifdef USE_BLE
     if(telnetrx == 0)blloop(mess);
     //blloop(mess);//update BLE
@@ -398,5 +415,29 @@ void store_debounce(int cycle){
   EEPROM.put(8,cycle);
   EEPROM.commit();
 }
+
+ String printInternetTime() {
+  struct timeval tv;
+  String sttime = "n/a\r\n";
+  char stime[100];
+  struct timespec ts;
+  // Retrieve time from the high-resolution POSIX clock
+  // CLOCK_REALTIME tracks absolute time since the Epoch (Jan 1, 1970)
+  if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+    struct tm timeinfo;
+    ts.tv_sec -= 60 * 60 * 4;//time zone
+ // Convert the seconds portion to broken-down local calendar time
+    localtime_r(&ts.tv_sec, &timeinfo);
+    // Convert nanoseconds to ms
+    long ms = (ts.tv_nsec / 1000000) % 1000; 
+    sprintf(stime," %02d/%02d/%04d time %02d:%02d:%02d.%03ld\r\n",
+            timeinfo.tm_mon+1,timeinfo.tm_mday,timeinfo.tm_year+1900,
+            timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, ms);
+//    telnet.print(stime);
+    sttime = String(stime);
+  }
+  return sttime;
+}
+
 
 

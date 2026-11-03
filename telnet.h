@@ -80,7 +80,8 @@ void onTelnetConnect(String ip) {
   Serial.println(" connected");
   
   telnet.println("\nWelcome " + telnet.getIP());
-  telnet.println("1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust treg,6=reset cycle,7=help\n\r8=print all,9=debounce\n\rreboot=reboot,bye=quit,0=setup");
+  telnet.print("1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust treg,6=reset cycle,7=help\n\r");
+  telnet.println("8=print all,9=debounce\n\rreboot=reboot,bye=quit,0=setup\r\nrev 1");
 }
 
 void onTelnetDisconnect(String ip) {
