@@ -9,6 +9,7 @@
 #endif
 #include <EEPROM.h>
 #include <time.h>
+#include <oled_4.h>
 
 #ifdef USE_OTA
 #include <ota.h>
@@ -49,7 +50,7 @@ IPAddress sub_IP(255, 255, 255, 0);
 #define CLOCK_SWINGS 60
 int sample[100];
 unsigned long startTime;
-int cycle = 0;
+int active_cycle = 0;
 int swings = 300;
 int debounce = 25;
 int connected = 0;
@@ -83,15 +84,15 @@ void setup() {
 
   //set the resolution to 12 bits (0-4095)
   analogReadResolution(12);
-  cycle = get_last_cycle();
+  active_cycle = get_last_cycle();
   swings = get_swings_level();
   debounce = get_debounce_level();
-  Serial.printf("last cycle = %d\r\n",cycle);
+  Serial.printf("last cycle = %d\r\n",active_cycle);
   Serial.printf("last swings = %d\r\n",swings);
-  read_cycle = cycle;
+  read_cycle = active_cycle;
   //asetup();
     pinMode(irsensor,INPUT_PULLUP);
-
+  oled_setup();
 }
  
 int debounce_signal(int rawSignal, int requiredStableCount)
@@ -122,6 +123,8 @@ int debounce_signal(int rawSignal, int requiredStableCount)
 
 void loop() {
   unsigned long nowTime = micros();
+  unsigned long now2Time = micros();
+  static unsigned long start2Time = micros();
   static bool first_loop = true;
   static int ir_sensor_state = 0,last_ir_sensor_state = 0,ncnt = 0,loops = 0;
   static float ncnt_sum = 0;
@@ -133,7 +136,10 @@ void loop() {
     startTime = micros();
     ir_sensor_state = digitalRead(irsensor);
     digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
-    if(ncnt == 0)clock_gettime(CLOCK_REALTIME, &start_time) ;//gettimeofday(&start_time, NULL);
+    if(ncnt == 0){
+      clock_gettime(CLOCK_REALTIME, &start_time) ;//gettimeofday(&start_time, NULL);
+//      check_input();
+    }
     ncnt++;
     ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
     if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
@@ -141,7 +147,7 @@ void loop() {
         clock_gettime(CLOCK_REALTIME, &end_time) ;//       gettimeofday(&end_time, NULL);
         float result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
         String mess =  String("cnt =") + String((float)ncnt/10000,4);
-        mess += String(" sec,  ") + String(result) + String("sec \r\n");
+        mess += String(" sec, internet time ") + String(result) + String("sec \r\n");
 #ifdef USE_BLE
        blloop(mess);//update BLE
 #endif
@@ -151,38 +157,48 @@ void loop() {
 //        blloop(mess);
 //        if(tdebug)telnet.print(mess);
       }
-      if(ncnt > 8000){
-        if(loops){//don't use first loop
-          new_cnt = ncnt;
-          ncnt_sum += ncnt;
-        }
-        loops++;
-        if(loops >= swings + 1){
-          ncnt_result = ncnt_sum / (float)swings;
-          store_avg(cycle++,new_cnt,ncnt_result);
-
-          if(debug){
-            String mess =  String("avg=") + String((float)ncnt_result/(10000),4) +  String(" sec\r\n");
+      if(loops){//don't use first loop
+        new_cnt = ncnt;
+        ncnt_sum += ncnt;
+      }
+      loops++;
+      if(loops >= swings + 1){
+        ncnt_result = ncnt_sum / (float)swings;
+        store_avg(active_cycle++,new_cnt,ncnt_result);
+        String mess = String(ncnt_result);
+        oled_loop(new_cnt,mess);
+        if(debug){
+          String mess =  String("avg=") + String((float)ncnt_result/(10000),4) +  String(" sec\r\n");
 #ifdef USE_BLE
-            blloop(mess);//update BLE
+          blloop(mess);//update BLE
 #endif
 #ifdef USE_TELNET
-           telnet.print(mess);
+          telnet.print(mess);
 #endif
 //            blloop(mess);
 //            if(tdebug)telnet.print(mess);
           }
           loops = ncnt_sum = 0;
         }
-      }
       ncnt = 0;
     }//end of trigger processing
+    check_input();
+    last_ir_sensor_state = ir_sensor_state;
+  }//end of 100 usec loop
+  // if(ncnt > 20000){
+  //   ncnt = 0;
+  //   check_input();
+  // }
+}
+
+void check_input(){
+ // if(now2Time > start2Time + 500000 ){
+ //   start2Time = micros();
     sprocess_input();
 #ifdef USE_OTA
     if(connected)otaloop();
 #endif 
-    last_ir_sensor_state = ir_sensor_state;
-  }//end of 100 usec loop
+//  }
  }
 
 bool connect_to_wifi(){
@@ -269,7 +285,7 @@ void sprocess_input() {
     // else if (rxdata == 't'){motion_time_limit-=2;if(motion_time_limit<4)motion_time_limit=4; mess = String("decreased motion_time_limit to ") + String(motion_time_limit) +String("\r\n");}
     // else if (rxdata == 'w'){mess = "update eeprom\r\n";load_up_eeprom(false,true);}
      else if (rxdata == 's') {mess =  String("single =") + String((float)new_cnt/10000,4) +  String( " sec,swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",result =") + String((float)ncnt_result/10000,4) +  String(" sec\r\n");}
-     else if (rxdata == 'R'){cycle = 0;store_avg(cycle,1,2);} //send setup
+     else if (rxdata == 'R'){active_cycle = 0;store_avg(active_cycle,1,2);} //send setup
      else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
                             mess += String(printInternetTime()) + String("\r\n");}
     // else if (rxdata == '2'){test_radar = !test_radar;if(test_radar) mess = String("test_radar on\r\n");else  mess = String("test_radar off\r\n");}
@@ -324,7 +340,11 @@ void sprocess_input() {
 int get_last_cycle(){
   int lcycle;
   EEPROM.get(0,lcycle);
-  if(lcycle < 0 || lcycle >= 500)lcycle = 0;
+  if(lcycle < 0 || lcycle >= 500){
+    lcycle = 0;
+    EEPROM.put(0,lcycle);
+    EEPROM.commit();
+  }
   return lcycle;
 }
 
@@ -344,20 +364,21 @@ int get_debounce_level(){
 
 float get_avg(int cycle){
   float lcycle;
-  EEPROM.get(16 + 500 * 4 + 4 * cycle,lcycle);
+  EEPROM.get(16 + 500 * 4 + 4 * cycle,lcycle);//2016-4016
   return lcycle;
 }
 
 int get_cnt(int cycle){
   int lcycle;
-  EEPROM.get(16 + 4 * cycle,lcycle);
+  EEPROM.get(16 + 4 * cycle,lcycle);//16-2016
   return lcycle;
 }
 
 void print_cycles(){
   int lcycle,cnt;
   float pk,pk_avg = 0;
-  EEPROM.get(0,lcycle);
+  lcycle = get_last_cycle();
+//  EEPROM.get(0,lcycle);
    String mess1;
   for(int k =0;k < lcycle + 1;k++){
     EEPROM.get(16 + k * 4,cnt);
@@ -391,15 +412,19 @@ void print_cycles(){
 float get_last_avg(){
   int lcycle;
   float cnt;
-  EEPROM.get(0,lcycle);
-  EEPROM.get(16 + 500 *4 + lcycle * 4,cnt);
+  lcycle = get_last_cycle();
+ // EEPROM.get(0,lcycle);
+  EEPROM.get(16 + 500 *4 + lcycle * 4,cnt);//2016-4016
   return cnt;
 }
 
 void store_avg(int cycle,int cnt,float peak){
-  if(cycle >= 500)cycle = 0;
-  EEPROM.put(16 + cycle * 4,cnt);
-  EEPROM.put(16 + 500 * 4 + cycle * 4,peak);
+  if(cycle >= 500){
+    cycle = 0;
+    active_cycle = 0;
+  }
+  EEPROM.put(16 + cycle * 4,cnt);//16-2016
+  EEPROM.put(16 + 500 * 4 + cycle * 4,peak);//2016-4016
   EEPROM.put(0,cycle);
   EEPROM.commit();
 }
