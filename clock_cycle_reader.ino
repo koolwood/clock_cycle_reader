@@ -27,7 +27,7 @@ int debug = 0,tdebug = 0,cnt_time = 0,new_cnt = 0,avg_cnt = 0;
 float ncnt_result = 0;
 unsigned char rxdata = 0,telnetrx = 0;
 /*Put your SSID & Pass =word*/
-char ssid[32] = "starwars24";  // Enter SSID here
+char ssid[32] = "starwars33";  // Enter SSID here
 char password[32] = "0609606096";  //Enter Password here
 const char* ntpServer = "pool.ntp.org";
 
@@ -35,7 +35,7 @@ struct timespec end_time;
 struct timespec start_time;
 
 // Set your Static IP address
-IPAddress local_IP(192, 168, 1, 29);
+IPAddress local_IP(192, 168, 1, 30);
 
 // wl
 IPAddress gate_IP(192, 168, 1, 249);
@@ -126,7 +126,7 @@ void loop() {
   unsigned long now2Time = micros();
   static unsigned long start2Time = micros();
   static bool first_loop = true;
-  static int ir_sensor_state = 0,last_ir_sensor_state = 0,ncnt = 0,loops = 0;
+  static int ir_sensor_state = 0,last_ir_sensor_state = 0,ncnt = 0,loops = 0,ck_cnt = 0,t_loop = 0;
   static float ncnt_sum = 0;
   if(first_loop){
     first_loop = false;
@@ -182,7 +182,12 @@ void loop() {
         }
       ncnt = 0;
     }//end of trigger processing
-    check_input();
+    if(ck_cnt++ > 5000){
+      ck_cnt = 0;
+      check_input();
+      String mess = String(ncnt_result);
+      oled_loop(t_loop++,mess);
+    }
     last_ir_sensor_state = ir_sensor_state;
   }//end of 100 usec loop
   // if(ncnt > 20000){

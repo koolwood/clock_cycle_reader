@@ -197,9 +197,9 @@ void teloop() {
   telnet.loop();
 
   // send serial input to telnet as output
-  if (Serial.available()) {
-    telnet.print(Serial.read());
-  }
+  // if (Serial.available()) {
+  //   telnet.print(Serial.read());
+  // }
 }
 
 //* ------------------------------------------------- */
