@@ -35,7 +35,7 @@ struct timespec end_time;
 struct timespec start_time;
 
 // Set your Static IP address
-IPAddress local_IP(192, 168, 1, 30);
+IPAddress local_IP(192, 168, 1, 29);
 
 // wl
 IPAddress gate_IP(192, 168, 1, 249);
@@ -122,9 +122,9 @@ int debounce_signal(int rawSignal, int requiredStableCount)
 }
 
 void loop() {
+  static unsigned long last_nowtime = micros();
   unsigned long nowTime = micros();
   unsigned long now2Time = micros();
-  static unsigned long start2Time = micros();
   static bool first_loop = true;
   static int ir_sensor_state = 0,last_ir_sensor_state = 0,ncnt = 0,loops = 0,ck_cnt = 0,t_loop = 0;
   static float ncnt_sum = 0;
@@ -132,31 +132,20 @@ void loop() {
     first_loop = false;
     startTime = micros();
   }
+  if (nowTime < last_nowtime){//roll over
+    startTime = micros();
+  }
   if(nowTime > startTime + 100 ){
     startTime = micros();
     ir_sensor_state = digitalRead(irsensor);
     digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
-    if(ncnt == 0){
-      clock_gettime(CLOCK_REALTIME, &start_time) ;//gettimeofday(&start_time, NULL);
-//      check_input();
-    }
+    // if(ncnt == 0){
+    //   clock_gettime(CLOCK_REALTIME, &start_time) ;//gettimeofday(&start_time, NULL);
+    // }
     ncnt++;
     ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
     if(last_ir_sensor_state == 0 && ir_sensor_state == 1){
-      if(debug > 1 ){
-        clock_gettime(CLOCK_REALTIME, &end_time) ;//       gettimeofday(&end_time, NULL);
-        float result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
-        String mess =  String("cnt =") + String((float)ncnt/10000,4);
-        mess += String(" sec, internet time ") + String(result) + String("sec \r\n");
-#ifdef USE_BLE
-       blloop(mess);//update BLE
-#endif
-#ifdef USE_TELNET
-        telnet.print(mess);
-#endif
-//        blloop(mess);
-//        if(tdebug)telnet.print(mess);
-      }
+//      clock_gettime(CLOCK_REALTIME, &end_time) ;
       if(loops){//don't use first loop
         new_cnt = ncnt;
         ncnt_sum += ncnt;
@@ -165,46 +154,54 @@ void loop() {
       if(loops >= swings + 1){
         ncnt_result = ncnt_sum / (float)swings;
         store_avg(active_cycle++,new_cnt,ncnt_result);
-        String mess = String(ncnt_result);
-        oled_loop(new_cnt,mess);
+        // String mess = String(ncnt_result);
+        // oled_loop(new_cnt,mess);
         if(debug){
           String mess =  String("avg=") + String((float)ncnt_result/(10000),4) +  String(" sec\r\n");
-#ifdef USE_BLE
+          #ifdef USE_BLE
           blloop(mess);//update BLE
-#endif
-#ifdef USE_TELNET
+          #endif
+          #ifdef USE_TELNET
           telnet.print(mess);
-#endif
-//            blloop(mess);
-//            if(tdebug)telnet.print(mess);
-          }
-          loops = ncnt_sum = 0;
+          #endif
         }
+        loops = ncnt_sum = 0;
+        ck_cnt = 0;
+      }//end swing teester
+      if(debug > 1 ){
+//        float result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
+        String mess =  String("cnt = ") + String((float)ncnt/10000,4) ;//+ String("sec \r\n");
+        mess +=  String("loop = ") + String(loops) + String("cnt \r\n");
+//        mess += String(" sec, internet time ") + String(result) + String("sec \r\n");
+        #ifdef USE_BLE
+        blloop(mess);//update BLE
+        #endif
+        #ifdef USE_TELNET
+        telnet.print(mess);
+        #endif
+   //     startTime = micros();
+      }
       ncnt = 0;
     }//end of trigger processing
-    if(ck_cnt++ > 5000){
-      ck_cnt = 0;
-      check_input();
-      String mess = String(ncnt_result);
-      oled_loop(t_loop++,mess);
-    }
     last_ir_sensor_state = ir_sensor_state;
-  }//end of 100 usec loop
-  // if(ncnt > 20000){
-  //   ncnt = 0;
-  //   check_input();
-  // }
+  }
+  check_input();
+  last_nowtime = nowTime;
+    // if(ncnt == 0 || ncnt > 20000){
+    //   ncnt = 0;
+    //   check_input();
+    //   // String mess = String(ncnt_result);
+    //   // oled_loop(t_loop++,mess);
+    // }
+
 }
 
 void check_input(){
- // if(now2Time > start2Time + 500000 ){
- //   start2Time = micros();
-    sprocess_input();
+  sprocess_input();
 #ifdef USE_OTA
     if(connected)otaloop();
 #endif 
-//  }
- }
+}
 
 bool connect_to_wifi(){
   int login_cnt = 0,wifi_status;
