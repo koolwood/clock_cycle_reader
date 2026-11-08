@@ -81,7 +81,7 @@ void onTelnetConnect(String ip) {
   
   telnet.println("\nWelcome " + telnet.getIP());
   telnet.print("1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust treg,6=reset cycle,7=help\n\r");
-  telnet.println("8=print all,9=debounce\n\rreboot=reboot,bye=quit,0=setup\r\nrev 1");
+  telnet.println("8=print all,9=debounce\n\rreboot=reboot,x=quit,0=setup\r\nrev 1");
 }
 
 void onTelnetDisconnect(String ip) {
@@ -109,7 +109,7 @@ void onTelnetInput(String str) {
     telnet.println("> pong"); 
     Serial.println("- Telnet: pong");
   // disconnect the client
-  } else if (str == "bye") {
+  } else if (str == "x") {
     telnet.println("> disconnecting you...");
     telnet.disconnectClient();
   } else if (str == "1") {
@@ -152,6 +152,7 @@ void onTelnetInput(String str) {
     delay(2000);
   } else {
     telnet.println(str);
+    telnetrx = 'Q';
   }
 }
 

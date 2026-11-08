@@ -53,14 +53,12 @@ IPAddress sub_IP(255, 255, 255, 0);
 
 #define CLOCK_SWINGS 60
 int sample[100];
-unsigned long startTime;
 int active_cycle = 0;
 int swings = 300;
 int debounce = 25;
 int connected = 0;
 int read_cycle = 0;
 int led = 8;
-int off_avg = 0;
 
 int irsensor = 4;
 
@@ -84,7 +82,6 @@ void setup() {
 #ifdef USE_BLE
   blsetup();
 #endif
-//  blsetup();
 
   //set the resolution to 12 bits (0-4095)
   analogReadResolution(12);
@@ -136,13 +133,12 @@ float get_swing_time(){
   struct timespec loop_end_time;
   struct timespec start_time;
   struct timespec end_time;
-// return 2;
+
   clock_gettime(CLOCK_REALTIME, &loop_start_time) ;
   while(done == 0 && test_result < 4.0){
     ir_sensor_state = digitalRead(irsensor);
     digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
     ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
-
     if(last_ir_sensor_state == 0 && ir_sensor_state == 1  && waiting && started == 0){
       clock_gettime(CLOCK_REALTIME, &start_time) ;
       started = 1;
@@ -153,14 +149,12 @@ float get_swing_time(){
       state = 2;
     }else if(last_ir_sensor_state == 0 && ir_sensor_state == 1  &&  waiting == 0 && started == 1){
       clock_gettime(CLOCK_REALTIME, &end_time) ;
-      result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;//micros() - startTime;
+      result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
       state = 3;
       done = true;
     }
-
     clock_gettime(CLOCK_REALTIME, &loop_end_time);
-    test_result = loop_end_time.tv_sec - loop_start_time.tv_sec + (float)loop_end_time.tv_nsec/1000000000 - (float)loop_start_time.tv_nsec/1000000000;//micros() - startTime;
-//    delay(25);
+    test_result = loop_end_time.tv_sec - loop_start_time.tv_sec + (float)loop_end_time.tv_nsec/1000000000 - (float)loop_start_time.tv_nsec/1000000000;
     check_input();
     last_ir_sensor_state = ir_sensor_state;
     if(debug > 1 && (last_state != state || test_result >= 4)){
@@ -219,7 +213,8 @@ float get_swing_avg(int active_cycle, int swings){
 }
 
 void check_input(){
-  sprocess_input();
+  sprocess_telnet();
+//  sprocess_input();
 #ifdef USE_OTA
     if(connected)otaloop();
 #endif 
@@ -280,87 +275,6 @@ bool connect_to_wifi(){
   return not_connected;
 }
 
-void sprocess_input() {
-  String mess;
-  int reboot = 0;
-  if(telnetrx != 0)rxdata = telnetrx;
-  if (rxdata != 0) {
-    if (rxdata == 'h'){
-      if(telnetrx == 0)mess = "1 = debug,R=reset cycle,t=adjust swings\r\nc or C=read+,c=read-,e=read cycle,L=print all cycles,y=debounce,x=reboot,s=setup\r\n";
-      else mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust swings,6=reset cycle,7=help\n\r8=print all cycles,9=debounce\n\rbye=quit,reboot=reboot,0=setup\r\n";
-    }
-    //  else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
-    // else if (rxdata == 'c'){ mess = "clearing counter\r\n";counter = 0;}
-     else if (rxdata == 'C'){read_cycle++;if(read_cycle>=500)read_cycle=499; mess = String("increased read_cycle to ") + String(read_cycle) +String("\r\n");}
-     else if (rxdata == 'e'){mess =  String("cycle = ") + String(read_cycle) + String(",swings =") + String(get_swings(read_cycle))+ String(",avg =") + String(get_avg(read_cycle),6) + String("\r\n");}
-     else if (rxdata == 'c'){read_cycle--;if(read_cycle<0)read_cycle=0; mess = String("decreased read_cycle to ") + String(read_cycle) +String("\r\n");}
-     else if (rxdata == 'x'){reboot = 1;String("rebooting in 2 seconds ") + String("\r\n");}
-     else if (rxdata == 'L'){print_cycles();}
-     else if (rxdata == 't'){swings*=2;if(swings>2100)swings=1; mess = String(" swings set to ") + String(swings) +String("\r\n");store_swings(swings);}
-     else if (rxdata == 'y'){debounce +=1;if(debounce>25)debounce=1; mess = String(" debounce set to ") + String(debounce) +String("\r\n");store_debounce(debounce);}
-    // else if (rxdata == 'p'){photo-=100;if(photo<100)photo=100; mess = String("decreased photo to ") + String(photo) +String("\r\n");}
-    // else if (rxdata == 'M'){motion_delta+=100;if(motion_delta>2000)motion_delta=2000; mess = String("increased motion_delta to ") + String(motion_delta) +String("\r\n");}
-    // else if (rxdata == 'm'){motion_delta-=100;if(motion_delta<100)motion_delta=100; mess = String("decreased motion_delta to ") + String(motion_delta) +String("\r\n");}
-    // else if (rxdata == 'Y'){yellow_limit+=5;if(yellow_limit>80)yellow_limit=80; mess = String("increased yellow_limit to ") + String(yellow_limit) +String("\r\n");}
-    // else if (rxdata == 'y'){yellow_limit-=5;if(yellow_limit<red_limi + 5)yellow_limit=red_limit + 5; mess = String("decreased yellow_limit to ") + String(yellow_limit) +String("\r\n");}
-    // else if (rxdata == 'R'){red_limit+=5;if(red_limit>yellow_limit - 5)red_limit=yellow_limit - 5; mess = String("increased red_limit to ") + String(red_limit) +String("\r\n");}
-    // else if (rxdata == 'r'){red_limit-=5;if(red_limit<5)red_limit=5; mess = String("decreased red_limit to ") + String(red_limit) +String("\r\n");}
-    // else if (rxdata == 'T'){motion_time_limit+=2;if(motion_time_limit>60)motion_time_limit=60; mess = String("increased motion_time_limit to ") + String(motion_time_limit) +String("\r\n");}
-    // else if (rxdata == 't'){motion_time_limit-=2;if(motion_time_limit<4)motion_time_limit=4; mess = String("decreased motion_time_limit to ") + String(motion_time_limit) +String("\r\n");}
-    // else if (rxdata == 'w'){mess = "update eeprom\r\n";load_up_eeprom(false,true);}
-     else if (rxdata == 's') {mess =  String( "swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",read result =") + String(get_avg(read_cycle),6) +  String(" sec\r\n");}
-     else if (rxdata == 'R'){read_cycle = active_cycle = 0;store_avg(active_cycle,1,2);} //send setup
-     else if (rxdata == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
-                            mess += String(printInternetTime()) + String("\r\n");}
-    // else if (rxdata == '2'){test_radar = !test_radar;if(test_radar) mess = String("test_radar on\r\n");else  mess = String("test_radar off\r\n");}
-     else mess = "invalid data send 'h' for help\n";
-    // setup_ld016();  printInternetTime()
-#ifdef USE_BLE
-    if(telnetrx == 0)blloop(mess);
-    //blloop(mess);//update BLE
-#endif
-#ifdef USE_TELNET
-    if(telnetrx)telnet.print(mess);
-#endif
-    if(telnetrx)tdebug = debug;
-    // if(telnetrx == 0)blloop(mess);
-    // else{
-    //   telnet.print(mess);
-    //   tdebug = debug;
-    // }
-    if(rxdata == 'c' || rxdata == 'C'){
-      mess =  String("cycle = ") + String(read_cycle) + String(",swings =") + String(get_swings(read_cycle))+ String(",avg =") + String(get_avg(read_cycle),6) + String("\r\n");
-#ifdef USE_BLE
-    if(telnetrx == 0)blloop(mess);
-    //blloop(mess);//update BLE
-#endif
-#ifdef USE_TELNET
-    if(telnetrx)telnet.print(mess);
-#endif
-      //  if(telnetrx == 0)blloop(mess);
-      //  else telnet.print(mess);
-    }
-    rxdata = 0;
-    mess = String("last cycle =") + String(get_last_cycle()) + String(",swings =") + String(swings)+  String(",avg =") + String(get_last_avg(),6) + String("\r\n");
-#ifdef USE_BLE
-    if(telnetrx == 0)blloop(mess);//update BLE
-#endif
-#ifdef USE_TELNET
-    if(telnetrx) telnet.print(mess);
-#endif
-    telnetrx = 0;
-  }else{
-    mess =  String("");
-#ifdef USE_BLE
-    if(telnetrx == 0)blloop(mess);//update BLE
-#endif
-  }
-#ifdef USE_TELNET
-  if(connected)teloop();
-#endif
-  if(reboot == 1){delay(2000);ESP.restart();delay(2000);}
-}
-
 int get_last_cycle(){
   int lcycle;
   EEPROM.get(0,lcycle);
@@ -402,7 +316,6 @@ void print_cycles(){
   int lcycle,cnt;
   float pk,pk_avg = 0;
   lcycle = get_last_cycle();
-//  EEPROM.get(0,lcycle);
    String mess1;
   for(int k =0;k < lcycle + 1;k++){
     EEPROM.get(16 + k * 4,cnt);
@@ -419,10 +332,10 @@ void print_cycles(){
 #endif
 //    blloop(mess);
 //    if(telnetrx)telnet.print(mess);
-    pk_avg += pk;
+    if(k != 0)pk_avg += pk;
   }
-  pk_avg /= (lcycle + 1);
-  String mess = String("avg of all cycles =") + String(pk_avg,5) + String(" sec\r\n");
+  if(lcycle != 0)pk_avg /= (lcycle);
+  String mess = String("avg of all cycles =") + String(pk_avg,6) + String(" sec\r\n");
 #ifdef USE_BLE
     blloop(mess);//update BLE
 #endif
@@ -437,7 +350,6 @@ float get_last_avg(){
   int lcycle;
   float cnt;
   lcycle = get_last_cycle();
- // EEPROM.get(0,lcycle);
   EEPROM.get(16 + 500 *4 + lcycle * 4,cnt);//2016-4016
   return cnt;
 }
@@ -487,6 +399,41 @@ void store_debounce(int cycle){
   }
   return sttime;
 }
+void sprocess_telnet() {
+  String mess;
+  int reboot = 0;
+  if (telnetrx != 0) {
+    if (telnetrx == 'h'){
+      mess = "1=read,2=read next,3=read prev,4=toggle debug \n\r5=adjust swings,6=reset cycle,7=help\n\r";
+      mess += "8=print all cycles,9=debounce\n\r0=setup,reboot=reboot,x=quit\r\n";
+    }
+     else if (telnetrx == 'C'){read_cycle++;if(read_cycle>=500)read_cycle=499; mess = String("increased read_cycle to ") + String(read_cycle) +String("\r\n");}
+     else if (telnetrx == 'e'){mess =  String("cycle = ") + String(read_cycle) + String(",swings =") + String(get_swings(read_cycle))+ String(",avg =") + String(get_avg(read_cycle),6) + String("\r\n");}
+     else if (telnetrx == 'c'){read_cycle--;if(read_cycle<0)read_cycle=0; mess = String("decreased read_cycle to ") + String(read_cycle) +String("\r\n");}
+     else if (telnetrx == 'x'){reboot = 1;String("rebooting in 2 seconds ") + String("\r\n");}
+     else if (telnetrx == 'L'){print_cycles();}
+     else if (telnetrx == 't'){swings*=2;if(swings>2100)swings=1; mess = String(" swings set to ") + String(swings) +String("\r\n");store_swings(swings);}
+     else if (telnetrx == 'y'){debounce +=1;if(debounce>25)debounce=1; mess = String(" debounce set to ") + String(debounce) +String("\r\n");store_debounce(debounce);}
+     else if (telnetrx == 's') {mess =  String( "swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",read result =") + String(get_avg(read_cycle),6) +  String(" sec\r\n");}
+     else if (telnetrx == 'R'){read_cycle = active_cycle = 0;store_avg(active_cycle,1,2);} //send setup
+     else if (telnetrx == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
+                            mess += String(printInternetTime()) + String("\r\n");}
+     else mess = "invalid data send 'h' for help\n\r";
+    telnet.print(mess);
+    tdebug = debug;
+    if(telnetrx == 'c' || telnetrx == 'C'){
+      mess =  String("cycle = ") + String(read_cycle) + String(",swings =") + String(get_swings(read_cycle))+ String(",avg =") + String(get_avg(read_cycle),6) + String("\r\n");
+      telnet.print(mess);
+    }
+    telnetrx = 0;
+    mess = String("last cycle =") + String(get_last_cycle()) + String(",swings =") + String(swings)+  String(",avg =") + String(get_last_avg(),6) + String("\r\n");
+    telnet.print(mess);
+  }
+  if(connected)teloop();
+ if(reboot == 1){delay(2000);ESP.restart();delay(2000);}
+}
+
+
 
 
 
