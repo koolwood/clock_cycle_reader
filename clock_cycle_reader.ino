@@ -22,12 +22,13 @@
 #ifdef USE_BLE
 #include <esp32_bluetooth.h>
 #endif
+#include <fastest_timer.h>
 
 int debug = 0,tdebug = 0,cnt_time = 0,new_cnt = 0,avg_cnt = 0;
 float ncnt_result = 0;
 unsigned char rxdata = 0,telnetrx = 0;
 /*Put your SSID & Pass =word*/
-char ssid[32] = "starwars33";  // Enter SSID here
+char ssid[32] = "starwars24";  // Enter SSID here
 char password[32] = "0609606096";  //Enter Password here
 const char* ntpServer = "pool.ntp.org";
 
@@ -94,10 +95,10 @@ void setup() {
   //asetup();
     pinMode(irsensor,INPUT_PULLUP);
   oled_setup();
+  timersetup();
 }
  
-int debounce_signal(int rawSignal, int requiredStableCount)
-{
+int debounce_signal(int rawSignal, int requiredStableCount){
     static int stableState = 0;      // debounced output
     static int lastRawState = 0;     // previous raw sample
     static int counter = 0;               // counts consecutive stable samples
@@ -124,7 +125,7 @@ int debounce_signal(int rawSignal, int requiredStableCount)
 
 
 float get_swing_time(){
-  static bool last_ir_sensor_state = 1;
+  bool last_ir_sensor_state = 1;
   bool waiting =true,done =false,started = 0;
   int state = 0,last_state = 4;
   bool ir_sensor_state = digitalRead(irsensor);
@@ -157,17 +158,65 @@ float get_swing_time(){
     test_result = loop_end_time.tv_sec - loop_start_time.tv_sec + (float)loop_end_time.tv_nsec/1000000000 - (float)loop_start_time.tv_nsec/1000000000;
     check_input();
     last_ir_sensor_state = ir_sensor_state;
-    if(debug > 1 && (last_state != state || test_result >= 4)){
-      String mess =  String("test_result time = ") + String(test_result) + String(" sec, state = ") + String(state) + String("\r\n");
-      #ifdef USE_BLE
-      blloop(mess);//update BLE
-      #endif
-      #ifdef USE_TELNET
+    if(debug == 3 && (last_state != state || test_result >= 4)){
+      String mess =  String("test_result time = ") + String(test_result,6) + String(" sec, state = ") + String(state) + String("\r\n");
       telnet.print(mess);
-      #endif
     }
     last_state = state;
     if(test_result >= 4)return 4.0;
+  }
+  if(debug == 2){
+    String mess =  String("result time = ") + String(result,6) + String(" sec\r\n");
+    telnet.print(mess);
+  }
+  return result;
+}
+
+
+float get_swing_time_fast(){
+  bool last_ir_sensor_state = 1;
+  bool waiting =true,done =false,started = 0;
+  int state = 0,last_state = 4;
+  bool ir_sensor_state = digitalRead(irsensor);
+  float result = 0,test_result = 0;
+  struct timespec loop_start_time;
+  struct timespec loop_end_time;
+  struct timespec start_time;
+  struct timespec end_time;
+
+//  clock_gettime(CLOCK_REALTIME, &loop_start_time) ;
+  while(done == 0 && test_result < 4.0){
+    ir_sensor_state = digitalRead(irsensor);
+    digitalWrite(led, ir_sensor_state);   // change state of the LED by setting the pin to the LOW voltage level
+    ir_sensor_state = debounce_signal(ir_sensor_state,debounce);
+    if(last_ir_sensor_state == 0 && ir_sensor_state == 1  && waiting && started == 0){
+      clock_gettime(CLOCK_REALTIME, &start_time) ;
+      started = 1;
+      state = 1;
+    }else if(last_ir_sensor_state == 1 && ir_sensor_state == 0  && waiting  && started == 1 ){
+      waiting = 0;
+      started = 1;
+      state = 2;
+    }else if(last_ir_sensor_state == 0 && ir_sensor_state == 1  &&  waiting == 0 && started == 1){
+      clock_gettime(CLOCK_REALTIME, &end_time) ;
+      result = end_time.tv_sec - start_time.tv_sec + (float)end_time.tv_nsec/1000000000 - (float)start_time.tv_nsec/1000000000;
+      state = 3;
+      done = true;
+    }
+    clock_gettime(CLOCK_REALTIME, &loop_end_time);
+    test_result = loop_end_time.tv_sec - loop_start_time.tv_sec + (float)loop_end_time.tv_nsec/1000000000 - (float)loop_start_time.tv_nsec/1000000000;
+    check_input();
+    last_ir_sensor_state = ir_sensor_state;
+    if(debug == 3 && (last_state != state || test_result >= 4)){
+      String mess =  String("test_result time = ") + String(test_result,6) + String(" sec, state = ") + String(state) + String("\r\n");
+      telnet.print(mess);
+    }
+    last_state = state;
+    if(test_result >= 4)return 4.0;
+  }
+  if(debug == 2){
+    String mess =  String("result time = ") + String(result,6) + String(" sec\r\n");
+    telnet.print(mess);
   }
   return result;
 }
@@ -175,22 +224,53 @@ float get_swing_time(){
 float get_swing_avg(int active_cycle, int swings){
   int loops = 0;
   float avg = 0;
-  while(loops++ < swings){
-    avg += get_swing_time();
-  }
-  avg = avg / swings;
+  double stime,etime,ttime = 0;
+  struct timespec sts;
+  struct timespec ets;
+  double sec = 0,usec = 0;
+  int64_t startTime = esp_timer_get_time();
+  int64_t endTime = esp_timer_get_time();
+
+//  clock_gettime(CLOCK_REALTIME, &sts);
+//  stime = getInternetTime();
+  startTime = esp_timer_get_time();
+//  if(debug == 5 ){
+    while(loops < swings){
+      if(itrigdgere){
+        itrigdgere = 0;
+        ttime += iloop;
+        loops++;
+      }else{
+        check_input();
+      }
+    }
+  // }else{
+  //   while(loops++ < swings){
+  //     ttime += get_swing_time();
+  //   }
+  // }
+  endTime = esp_timer_get_time();
+  // etime  = getInternetTime();
+  // clock_gettime(CLOCK_REALTIME, &ets);
+  avg = ttime / swings;
   store_avg(active_cycle,swings,avg);
   oled_loop(active_cycle,String(avg,6));
+  
 
   if(debug){
-    Serial.printf("avg = %f, swings = %d\r\n",avg,swings);
-    String mess =  String("got swings = ") + String(swings) + String(" , avg = ") + String(avg,5) + String(", active_cycle = ") + String(active_cycle) + String(" \r\n");
-    #ifdef USE_BLE
-    blloop(mess);//update BLE
-    #endif
-    #ifdef USE_TELNET
+    Serial.printf("avg swing = %f, swings = %d\r\n",avg,swings);
+    // String tttime  = String("clock time = ") +String(ets.tv_sec - sts.tv_sec + (float)ets.tv_nsec / 1000000000 - (float)sts.tv_nsec / 1000000000,6)+String("\r\n");
+//    String mess =  String("swings = ") + String(swings) + String(" , avg time = ") + String(avg,6) + String(", active_cycle = ");
+    String mess =  String("timer swing time = ") + String(avg,6) + String(" sec \r\n");
+    //mess += String(active_cycle) + String(" \r\ntotal swing time = ") ;
+    // if(debug==5) mess += String(ttime,6);
+    // else mess += String(ttime * 2.0,6);
+    // mess += String(" sec, total real time = ") + String(etime - stime,6) + String("sec, delta = ");
+    // if(debug==5)mess += String(etime - stime - ttime ,6) + String(" sec\r\n") + tttime;
+    // else mess += String(etime - stime - 2 * ttime ,6) + String(" sec\r\n") + tttime;
+    mess += String("esp32 swing time = ") + String((float)(endTime - startTime)/1000000/swings,6) + String("sec \r\n");
+    mess += String("delta = ") + String((float)(endTime - startTime)/1000000/swings - avg,6) + String("sec \r\n");
     telnet.print(mess);
-    #endif
   }
   return avg;
 }
@@ -214,6 +294,7 @@ float get_swing_avg(int active_cycle, int swings){
 
 void check_input(){
   sprocess_telnet();
+  if(debug == 4 )timerloop();
 //  sprocess_input();
 #ifdef USE_OTA
     if(connected)otaloop();
@@ -335,7 +416,7 @@ void print_cycles(){
     if(k != 0)pk_avg += pk;
   }
   if(lcycle != 0)pk_avg /= (lcycle);
-  String mess = String("avg of all cycles =") + String(pk_avg,6) + String(" sec\r\n");
+  String mess = String("avg of all cycles(except 0) =") + String(pk_avg,6) + String(" sec\r\n");
 #ifdef USE_BLE
     blloop(mess);//update BLE
 #endif
@@ -377,6 +458,38 @@ void store_debounce(int cycle){
   EEPROM.commit();
 }
 
+ double getInternetTime() {
+  // struct timeval tv;
+  // String sttime = "n/a\r\n";
+  // char stime[100];
+  struct timespec ts;
+  double sec = 0,usec = 0;
+  // Retrieve time from the high-resolution POSIX clock
+  // CLOCK_REALTIME tracks absolute time since the Epoch (Jan 1, 1970)
+  if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+//     struct tm timeinfo;
+//     ts.tv_sec -= 60 * 60 * 4;//time zone
+//  // Convert the seconds portion to broken-down local calendar time
+//     localtime_r(&ts.tv_sec, &timeinfo);
+//     // Convert nanoseconds to ms
+    usec = (double)ts.tv_nsec ;/// 1000.0;
+    usec /= 1000000000;
+    sec = (double)ts.tv_sec + usec;// (float)ts.tv_nsec / 1000000000.0; 
+//     sprintf(stime," %02d/%02d/%04d time %02d:%02d:%02d.%03ld\r\n",
+//             timeinfo.tm_mon+1,timeinfo.tm_mday,timeinfo.tm_year+1900,
+//             timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, ms);
+  if(debug == 1){
+   telnet.println(String("usec = ")+ String(usec,6));
+   telnet.println(String("sec = ")+ String(sec,6));
+ //  telnet.println(String("sec+usec = ")+ String(sec + usec,6)) ;
+  }
+//     sttime = String(stime);
+  }else{
+    sec = -1;
+  }
+  return sec;
+}
+
  String printInternetTime() {
   struct timeval tv;
   String sttime = "n/a\r\n";
@@ -399,6 +512,7 @@ void store_debounce(int cycle){
   }
   return sttime;
 }
+
 void sprocess_telnet() {
   String mess;
   int reboot = 0;
@@ -416,7 +530,7 @@ void sprocess_telnet() {
      else if (telnetrx == 'y'){debounce +=1;if(debounce>25)debounce=1; mess = String(" debounce set to ") + String(debounce) +String("\r\n");store_debounce(debounce);}
      else if (telnetrx == 's') {mess =  String( "swings=") + String(swings)  +  String( ",debounce=") + String(debounce) + String(",read result =") + String(get_avg(read_cycle),6) +  String(" sec\r\n");}
      else if (telnetrx == 'R'){read_cycle = active_cycle = 0;store_avg(active_cycle,1,2);} //send setup
-     else if (telnetrx == '1'){debug++;if(debug > 2)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
+     else if (telnetrx == '1'){debug++;if(debug > 5)debug = 0; mess = String("debug set to ") + String(debug) + String("\r\n time = ");
                             mess += String(printInternetTime()) + String("\r\n");}
      else mess = "invalid data send 'h' for help\n\r";
     telnet.print(mess);
