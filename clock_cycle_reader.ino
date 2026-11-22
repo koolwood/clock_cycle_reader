@@ -370,7 +370,7 @@ int get_last_cycle(){
 int get_swings_level(){
   int lcycle;
   EEPROM.get(4,lcycle);
-  if(lcycle < 1 || lcycle >= 2000)lcycle = 1;
+  if(lcycle < 1 || lcycle >= 2100)lcycle = 1;
   return lcycle;
 }
 
@@ -447,7 +447,7 @@ void store_avg(int cycle,int swings,float peak){
 }
 
 void store_swings(int cycle){
-  if(cycle >= 2000)cycle = 2000;
+  if(cycle >= 2100)cycle = 2100;
   if(cycle <= 1)cycle = 1;
   EEPROM.put(4,cycle);
   EEPROM.commit();
